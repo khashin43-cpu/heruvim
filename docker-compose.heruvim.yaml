@@ -1,0 +1,54 @@
+services:
+  open-webui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: heruvim-open-webui
+    volumes:
+      - heruvim-open-webui-data:/app/backend/data
+    ports:
+      - ${OPEN_WEBUI_PORT-3000}:8080
+    environment:
+      - WEBUI_NAME=ХЕРУВИМ
+      - DEFAULT_LOCALE=ru-RU
+      - CORS_ALLOW_ORIGIN=${CORS_ALLOW_ORIGIN-http://localhost:3000}
+      - SCARF_NO_ANALYTICS=true
+      - DO_NOT_TRACK=true
+      - ANONYMIZED_TELEMETRY=false
+      - ENABLE_OLLAMA_API=false
+      # Keep onboarding available until the owner's account is created.
+      # Set ENABLE_SIGNUP=false in local .env immediately afterwards.
+      - ENABLE_SIGNUP=${ENABLE_SIGNUP-true}
+      - WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}
+      - HERUVIM_LLM_BASE_URL=${HERUVIM_LLM_BASE_URL-}
+      - HERUVIM_LLM_MODEL=${HERUVIM_LLM_MODEL-}
+      - HERUVIM_LLM_API_KEY=${HERUVIM_LLM_API_KEY-}
+      - HERUVIM_LLM_DISPLAY_NAME=${HERUVIM_LLM_DISPLAY_NAME-ХЕРУВИМ}
+      - HERUVIM_RAGFLOW_BASE_URL=${HERUVIM_RAGFLOW_BASE_URL-http://host.docker.internal:9380}
+      - HERUVIM_RAGFLOW_API_KEY=${HERUVIM_RAGFLOW_API_KEY-}
+      - HERUVIM_RAGFLOW_CHAT_ID=${HERUVIM_RAGFLOW_CHAT_ID-}
+      - HERUVIM_RAGFLOW_AUTO_RETRIEVAL=${HERUVIM_RAGFLOW_AUTO_RETRIEVAL-true}
+      - HERUVIM_RAGFLOW_AUTO_RETRIEVAL_MODE=${HERUVIM_RAGFLOW_AUTO_RETRIEVAL_MODE-auto}
+      - HERUVIM_RAGFLOW_RETRIEVAL_PAGE_SIZE=${HERUVIM_RAGFLOW_RETRIEVAL_PAGE_SIZE-8}
+      - HERUVIM_RAGFLOW_RETRIEVAL_SIMILARITY_THRESHOLD=${HERUVIM_RAGFLOW_RETRIEVAL_SIMILARITY_THRESHOLD-0.2}
+      - HERUVIM_RAGFLOW_RETRIEVAL_VECTOR_WEIGHT=${HERUVIM_RAGFLOW_RETRIEVAL_VECTOR_WEIGHT-0.3}
+      - HERUVIM_RAGFLOW_FULL_DOCUMENTS=${HERUVIM_RAGFLOW_FULL_DOCUMENTS-true}
+      - HERUVIM_RAGFLOW_FULL_DOCUMENT_LIMIT=${HERUVIM_RAGFLOW_FULL_DOCUMENT_LIMIT-2}
+      - HERUVIM_RAGFLOW_FULL_DOCUMENT_MAX_CHARS=${HERUVIM_RAGFLOW_FULL_DOCUMENT_MAX_CHARS-60000}
+      - HERUVIM_DOCX_EDITOR_BASE_URL=${HERUVIM_DOCX_EDITOR_BASE_URL-http://host.docker.internal:9393}
+      - HERUVIM_PDF_EDITOR_BASE_URL=${HERUVIM_PDF_EDITOR_BASE_URL-http://host.docker.internal:9394}
+      - USER_PERMISSIONS_CHAT_CONTROLS=false
+      - USER_PERMISSIONS_CHAT_SYSTEM_PROMPT=false
+      - USER_PERMISSIONS_CHAT_PARAMS=false
+      - USER_PERMISSIONS_CHAT_MULTIPLE_MODELS=false
+      - USER_PERMISSIONS_FEATURES_WEB_SEARCH=false
+      - USER_PERMISSIONS_FEATURES_IMAGE_GENERATION=false
+      - USER_PERMISSIONS_FEATURES_DIRECT_TOOL_SERVERS=false
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
+volumes:
+  # The name intentionally matches the existing Heruvim deployment so a clean
+  # Open WebUI image can replace the former LIA image without losing user data.
+  heruvim-open-webui-data: {}

@@ -1,0 +1,8 @@
+<OpenSearchDescription xmlns="http://a9.com/-/spec/opensearch/1.1/" xmlns:moz="http://www.mozilla.org/2006/browser/search/">
+<ShortName>ХЕРУВИМ</ShortName>
+<Description>Поиск в ХЕРУВИМе</Description>
+<InputEncoding>UTF-8</InputEncoding>
+<Image width="96" height="96" type="image/svg+xml">http://localhost:5137/heruvim-mark.svg</Image>
+<Url type="text/html" method="get" template="http://localhost:5137/?q={searchTerms}"/>
+<moz:SearchForm>http://localhost:5137</moz:SearchForm>
+</OpenSearchDescription>

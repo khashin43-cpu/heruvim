@@ -1,0 +1,90 @@
+x-heruvim-mcp: &heruvim-mcp
+  image: heruvim-document-mcp:local
+  build:
+    context: ${RAGFLOW_PROJECT_DIR:-../ragflow_russian_osr_mod}
+    dockerfile: docker/Dockerfile.heruvim-mcp
+    args:
+      RAGFLOW_IMAGE: ${RAGFLOW_IMAGE-infiniflow/ragflow:v0.26.4}
+  environment:
+    - HERUVIM_RAGFLOW_BASE_URL=${HERUVIM_RAGFLOW_BASE_URL-http://host.docker.internal:9380}
+    - HERUVIM_RAGFLOW_API_KEY=${HERUVIM_RAGFLOW_API_KEY-}
+    - HERUVIM_RAGFLOW_CHAT_ID=${HERUVIM_RAGFLOW_CHAT_ID-}
+    - HERUVIM_RAGFLOW_DATASET_IDS=${HERUVIM_RAGFLOW_DATASET_IDS-}
+    - HERUVIM_OCR_LANGUAGES=${HERUVIM_OCR_LANGUAGES-rus+eng}
+    - OFFICECLI_BIN=
+  volumes:
+    - ${HERUVIM_DOCUMENTS_DIR-./.heruvim-documents}:/app/backend/data/uploads
+  extra_hosts:
+    - host.docker.internal:host-gateway
+  restart: unless-stopped
+
+services:
+  open-webui:
+    volumes:
+      - ${HERUVIM_DOCUMENTS_DIR-./.heruvim-documents}:/app/backend/data/uploads
+    environment:
+      - HERUVIM_DOCX_EDITOR_BASE_URL=http://heruvim-docx-mcp:9393
+      - HERUVIM_PDF_EDITOR_BASE_URL=http://heruvim-pdf-mcp:9394
+    depends_on:
+      heruvim-gateway-mcp:
+        condition: service_healthy
+      heruvim-docx-mcp:
+        condition: service_healthy
+      heruvim-pdf-mcp:
+        condition: service_healthy
+
+  heruvim-gateway-mcp:
+    <<: *heruvim-mcp
+    container_name: heruvim-gateway-mcp
+    entrypoint:
+      - /ragflow/.venv/bin/python
+      - /ragflow/mcp/heruvim_gateway/server.py
+      - --transport
+      - openapi
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9392"
+    ports:
+      - 127.0.0.1:${HERUVIM_GATEWAY_PORT-9392}:9392
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9392/tools/heruvim_tool_status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  heruvim-docx-mcp:
+    <<: *heruvim-mcp
+    container_name: heruvim-docx-mcp
+    entrypoint:
+      - /ragflow/.venv/bin/python
+      - /ragflow/mcp/heruvim_docx_editor/server.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9393"
+    ports:
+      - 127.0.0.1:${HERUVIM_DOCX_PORT-9393}:9393
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9393/tools/docx_status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  heruvim-pdf-mcp:
+    <<: *heruvim-mcp
+    container_name: heruvim-pdf-mcp
+    entrypoint:
+      - /ragflow/.venv/bin/python
+      - /ragflow/mcp/heruvim_pdf_editor/server.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "9394"
+    ports:
+      - 127.0.0.1:${HERUVIM_PDF_PORT-9394}:9394
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9394/tools/pdf_status"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
