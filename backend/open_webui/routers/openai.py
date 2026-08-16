@@ -31,8 +31,10 @@ from open_webui.config import (
     HERUVIM_LLM_API_KEY,
     HERUVIM_LLM_BASE_URL,
     HERUVIM_LLM_DISPLAY_NAME,
+    HERUVIM_LLM_ENABLE_THINKING,
     HERUVIM_LLM_ENABLED,
     HERUVIM_LLM_MODEL,
+    HERUVIM_LLM_THINKING_BUDGET,
     HERUVIM_RAGFLOW_API_KEY,
     HERUVIM_RAGFLOW_AUTO_RETRIEVAL,
     HERUVIM_RAGFLOW_AUTO_RETRIEVAL_MODE,
@@ -351,10 +353,10 @@ def _message_text(message: dict) -> str:
     return ''
 
 
-def _first_current_attachment_path(payload: dict) -> str:
+def _first_current_attachment(payload: dict) -> dict[str, str]:
     messages = payload.get('messages')
     if not isinstance(messages, list):
-        return ''
+        return {}
     for message in messages:
         if not isinstance(message, dict):
             continue
@@ -363,8 +365,14 @@ def _first_current_attachment_path(payload: dict) -> str:
             continue
         match = re.search(r'local_path="([^"]+)"', text)
         if match:
-            return match.group(1).strip()
-    return ''
+            file_id_match = re.search(r'file_id="([^"]+)"', text)
+            name_match = re.search(r'name="([^"]+)"', text)
+            return {
+                'path': match.group(1).strip(),
+                'file_id': file_id_match.group(1).strip() if file_id_match else '',
+                'name': name_match.group(1).strip() if name_match else '',
+            }
+    return {}
 
 
 async def _heruvim_attached_file_context(metadata: dict | None, user: UserModel) -> str:
@@ -463,6 +471,12 @@ def _add_heruvim_ragflow_tool(payload: dict, *, include_ragflow: bool = True) ->
 
     if payload.get('tool_choice') in (None, 'none'):
         payload['tool_choice'] = 'auto'
+
+
+def _apply_heruvim_llm_defaults(payload: dict) -> None:
+    payload.setdefault('enable_thinking', HERUVIM_LLM_ENABLE_THINKING)
+    if payload.get('enable_thinking'):
+        payload.setdefault('thinking_budget', HERUVIM_LLM_THINKING_BUDGET)
 
 
 def _add_heruvim_ragflow_tool_prompt(payload: dict) -> None:
@@ -650,7 +664,8 @@ def _extract_dsml_heruvim_tool_calls(message: dict | None) -> list[dict]:
 
 
 def _synthesize_current_attachment_tool_call(payload: dict) -> dict | None:
-    path = _first_current_attachment_path(payload)
+    attachment = _first_current_attachment(payload)
+    path = attachment.get('path') or ''
     if not path:
         return None
     user_text = _extract_latest_user_text(payload.get('messages'))
@@ -660,19 +675,27 @@ def _synthesize_current_attachment_tool_call(payload: dict) -> dict | None:
         return None
     if _HERUVIM_INDEXED_CORPUS_QUERY_RE.search(user_text):
         return None
+    suffix = Path(path).suffix.lower()
+    tool_name = _HERUVIM_READ_DOCUMENT_TOOL_NAME
+    if suffix == '.docx':
+        tool_name = 'heruvim_docx_read'
+    elif suffix == '.pdf':
+        tool_name = 'heruvim_pdf_read'
+    arguments = {
+        'path': path,
+        '_heruvim_file_id': attachment.get('file_id') or '',
+        '_heruvim_file_name': attachment.get('name') or Path(path).name,
+    }
+    if suffix == '.pdf':
+        arguments.update({'max_pages': 20, 'max_chars_per_page': 12000})
+    elif suffix not in {'.docx'}:
+        arguments.update({'max_pages': 20, 'max_chars_per_page': 12000})
     return {
         'id': 'heruvim_current_attachment_1',
         'type': 'function',
         'function': {
-            'name': _HERUVIM_READ_DOCUMENT_TOOL_NAME,
-            'arguments': json.dumps(
-                {
-                    'path': path,
-                    'max_pages': 20,
-                    'max_chars_per_page': 12000,
-                },
-                ensure_ascii=False,
-            ),
+            'name': tool_name,
+            'arguments': json.dumps(arguments, ensure_ascii=False),
         },
     }
 
@@ -1288,12 +1311,13 @@ async def _execute_heruvim_local_openapi_tool(tool_call: dict) -> dict:
 
     method, base_url, path = target
     arguments = _normalize_heruvim_tool_arguments(name, _parse_tool_arguments(tool_call))
+    request_arguments = {key: value for key, value in arguments.items() if not key.startswith('_heruvim_')}
     timeout = aiohttp.ClientTimeout(total=900)
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             request_kwargs = {'ssl': AIOHTTP_CLIENT_SESSION_SSL}
             if method == 'POST':
-                request_kwargs['json'] = arguments
+                request_kwargs['json'] = request_arguments
             async with session.request(method, f'{base_url}{path}', **request_kwargs) as response:
                 raw = await response.text()
                 try:
@@ -1406,11 +1430,42 @@ async def _execute_heruvim_tool(
     if name == _HERUVIM_RAGFLOW_TOOL_NAME:
         return await _execute_heruvim_ragflow_tool(tool_call, public_base_url=public_base_url)
     if name == _HERUVIM_READ_DOCUMENT_TOOL_NAME:
-        return await _execute_heruvim_read_document_tool(tool_call)
+        result = await _execute_heruvim_read_document_tool(tool_call)
+        return _add_current_attachment_links(result, tool_call, public_base_url)
     if name in _HERUVIM_LOCAL_OPENAPI_TOOLS:
         result = await _execute_heruvim_local_openapi_tool(tool_call)
+        if name in {'heruvim_docx_read', 'heruvim_pdf_read'} and not result.get('ok'):
+            arguments = _parse_tool_arguments(tool_call)
+            fallback_call = {
+                'function': {
+                    'name': _HERUVIM_READ_DOCUMENT_TOOL_NAME,
+                    'arguments': json.dumps(arguments, ensure_ascii=False),
+                }
+            }
+            result = await _execute_heruvim_read_document_tool(fallback_call)
+            result['fallback_from'] = name
+            result['tool'] = _HERUVIM_READ_DOCUMENT_TOOL_NAME
+        if name in {'heruvim_docx_read', 'heruvim_pdf_read'}:
+            return _add_current_attachment_links(result, tool_call, public_base_url)
         return await _register_heruvim_artifact(result, str(name), user, public_base_url, request)
     return {'ok': False, 'error': f'Unknown Heruvim tool: {name}'}
+
+
+def _add_current_attachment_links(result: dict, tool_call: dict, public_base_url: str = '') -> dict:
+    if not result.get('ok'):
+        return result
+    arguments = _parse_tool_arguments(tool_call)
+    file_id = str(arguments.get('_heruvim_file_id') or '').strip()
+    if not file_id:
+        return result
+    base = public_base_url.rstrip('/')
+    preview_url = f'{base}/api/v1/files/{file_id}/content'
+    download_url = f'{preview_url}?attachment=true'
+    result['file_id'] = file_id
+    result['name'] = result.get('name') or arguments.get('_heruvim_file_name') or Path(str(arguments.get('path') or '')).name
+    result['preview_url'] = preview_url
+    result['download_url'] = download_url
+    return result
 
 
 def _format_heruvim_tool_context(tool_call: dict, result: dict) -> str:
@@ -1430,17 +1485,29 @@ def _format_heruvim_tool_context(tool_call: dict, result: dict) -> str:
             )
         return (
             'HERUVIM_LOCAL_DOCUMENT_READ_STATUS: ok\n'
+            'The current chat attachment was read by the document tool, not searched in a knowledge base. '
+            'Do not use [ID:n] citations. Begin the answer with a short line naming the tool and document.\n'
             f'document="{result.get("name")}" path="{result.get("path")}" type="{result.get("type")}" '
-            f'bytes="{result.get("byte_count")}" chars="{result.get("char_count")}"\n'
+            f'bytes="{result.get("byte_count")}" chars="{result.get("char_count")}" '
+            f'preview_url="{result.get("preview_url") or ""}" download_url="{result.get("download_url") or ""}"\n'
             f'{result.get("text") or ""}'
         )
 
     if name in _HERUVIM_LOCAL_OPENAPI_TOOLS:
         status = 'ok' if result.get('ok') else 'failed'
+        visibility_instruction = ''
+        if name in {'heruvim_docx_read', 'heruvim_pdf_read'} and result.get('ok'):
+            actual_tool = result.get('tool') or name
+            visibility_instruction = (
+                '\nThe current chat attachment was read by this document tool, not searched in a knowledge base. '
+                f'Begin the answer with `Документ прочитан инструментом {actual_tool}` and the document name. '
+                'If preview_url and download_url are present, include Markdown links named `Открыть документ` and '
+                '`Скачать документ`. Do not emit [ID:n] citations.'
+            )
         return (
             f'HERUVIM_DOCUMENT_TOOL_STATUS: {status}\n'
             f'tool="{name}"\n'
-            f'{_json_tool_content(result)}'
+            f'{_json_tool_content(result)}{visibility_instruction}'
         )
 
     return f'HERUVIM_TOOL_STATUS: failed\nerror="{result.get("error")}"'
@@ -2888,6 +2955,9 @@ async def generate_chat_completion(
         else:
             request_url = f'{url}/chat/completions'
     requested_model = payload.get('model')
+
+    if HERUVIM_LLM_ENABLED and api_config.get('provider') == 'openai':
+        _apply_heruvim_llm_defaults(payload)
 
     metadata_task = metadata.get('task') if isinstance(metadata, dict) else None
     if (

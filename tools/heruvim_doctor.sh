@@ -65,6 +65,18 @@ check_status_flag() {
 
 printf 'HERUVIM document stack doctor\n\n'
 
+if [[ -n "${HERUVIM_LLM_BASE_URL:-}" && -n "${HERUVIM_LLM_MODEL:-}" && -n "${HERUVIM_LLM_API_KEY:-}" ]]; then
+    pass 'HERUVIM primary LLM connection is configured'
+else
+    fail 'HERUVIM primary LLM connection is incomplete; base URL, model and a non-empty API key are required'
+fi
+
+if [[ "${HERUVIM_RAGFLOW_DIRECT_CHAT_FALLBACK:-false}" == "true" ]]; then
+    warn 'RAGFlow direct chat fallback is enabled; an incomplete LLM configuration will bypass MCP routing'
+else
+    pass 'RAGFlow direct chat fallback is disabled'
+fi
+
 if [[ "${HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING:-false}" == "true" ]]; then
     warn 'Open WebUI internal file processing is enabled; current chat attachments may enter the built-in RAG path instead of MCP-only processing'
 else
