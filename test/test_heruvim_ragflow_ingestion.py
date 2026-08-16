@@ -3,9 +3,11 @@ from types import SimpleNamespace
 
 import httpx
 from open_webui.internal.heruvim_ragflow_ingestion import (
+    RAGFlowIngestionQueue,
     canonical_document_id,
     public_ingestion_record,
 )
+from open_webui.internal import heruvim_ragflow_ingestion
 from open_webui.routers import files, heruvim
 
 
@@ -81,3 +83,26 @@ def test_internal_file_processing_flag_is_independent_from_ragflow(monkeypatch):
 
     monkeypatch.setattr(files, 'HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING', True)
     assert not files._heruvim_ragflow_only_uploads()
+
+
+def test_ingestion_queue_availability_is_independent_from_attachment_policy(monkeypatch):
+    queue = RAGFlowIngestionQueue()
+    monkeypatch.setattr(heruvim_ragflow_ingestion, 'HERUVIM_RAGFLOW_ENABLED', True)
+    monkeypatch.setattr(heruvim_ragflow_ingestion, 'HERUVIM_RAGFLOW_SYNC_ATTACHMENTS', False)
+
+    assert queue.enabled
+    assert not queue.sync_attachments
+
+
+def test_explicit_knowledge_upload_syncs_when_chat_attachment_sync_is_disabled(monkeypatch):
+    monkeypatch.setattr(files, 'HERUVIM_RAGFLOW_SYNC_ATTACHMENTS', False)
+
+    assert not files._should_sync_upload_to_ragflow(None, None)
+    assert files._should_sync_upload_to_ragflow({'knowledge_id': 'knowledge-1'}, None)
+    assert files._should_sync_upload_to_ragflow(None, True)
+
+
+def test_explicit_upload_can_disable_ragflow_sync(monkeypatch):
+    monkeypatch.setattr(files, 'HERUVIM_RAGFLOW_SYNC_ATTACHMENTS', True)
+
+    assert not files._should_sync_upload_to_ragflow({'knowledge_id': 'knowledge-1'}, False)

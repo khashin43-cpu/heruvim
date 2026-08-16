@@ -18,7 +18,6 @@ from open_webui.config import (
     HERUVIM_RAGFLOW_CHAT_ID,
     HERUVIM_RAGFLOW_DATASET_IDS,
     HERUVIM_RAGFLOW_ENABLED,
-    HERUVIM_RAGFLOW_SYNC_ATTACHMENTS,
 )
 from open_webui.internal.heruvim_ragflow_ingestion import ingestion_queue, public_ingestion_record
 from open_webui.models.files import Files
@@ -122,7 +121,7 @@ async def list_ingestion_jobs(user=Depends(get_verified_user)):
     return {
         'enabled': ingestion_queue.enabled,
         'configured': HERUVIM_RAGFLOW_ENABLED,
-        'sync_attachments': HERUVIM_RAGFLOW_SYNC_ATTACHMENTS,
+        'sync_attachments': ingestion_queue.sync_attachments,
         'chat_id': HERUVIM_RAGFLOW_CHAT_ID if user.role == 'admin' else None,
         'queue_size': ingestion_queue.size,
         'jobs': jobs,

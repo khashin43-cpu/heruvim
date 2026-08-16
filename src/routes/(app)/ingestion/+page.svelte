@@ -116,7 +116,7 @@
 		uploading = true;
 		try {
 			for (const file of selected) {
-				await uploadFile(localStorage.token, file, null, false, false);
+				await uploadFile(localStorage.token, file, null, false, false, true);
 			}
 			toast.success(selected.length === 1 ? 'Документ добавлен' : `Добавлено документов: ${selected.length}`);
 			await load(true);

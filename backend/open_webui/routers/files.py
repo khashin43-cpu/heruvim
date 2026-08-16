@@ -25,6 +25,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from open_webui.config import (
     BYPASS_ADMIN_ACCESS_CONTROL,
     HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING,
+    HERUVIM_RAGFLOW_SYNC_ATTACHMENTS,
     STORAGE_LOCAL_CACHE,
     STORAGE_PROVIDER,
     UPLOAD_DIR,
@@ -68,6 +69,20 @@ def _heruvim_ragflow_only_uploads() -> bool:
     # Keep it independent from optional RAGFlow synchronization so a chat
     # attachment can remain a plain stored file for MCP document tools.
     return not HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING
+
+
+def _should_sync_upload_to_ragflow(metadata: Optional[dict | str], explicit: Optional[bool]) -> bool:
+    if explicit is not None:
+        return explicit
+    parsed = metadata
+    if isinstance(parsed, str):
+        try:
+            parsed = json.loads(parsed)
+        except json.JSONDecodeError:
+            parsed = None
+    # Uploads made from a Knowledge Base are explicit user actions. Ordinary
+    # chat attachments follow the automatic synchronization setting.
+    return bool(isinstance(parsed, dict) and parsed.get('knowledge_id')) or HERUVIM_RAGFLOW_SYNC_ATTACHMENTS
 
 
 _HERUVIM_TEXT_EXTENSIONS = {'txt', 'md', 'csv', 'json', 'jsonl', 'xml', 'yaml', 'yml', 'log', 'rtf'}
@@ -292,6 +307,7 @@ async def upload_file(
     metadata: Optional[dict | str] = Form(None),
     process: bool = Query(True),
     process_in_background: bool = Query(True),
+    ragflow_sync: Optional[bool] = Query(None),
     user=Depends(get_verified_user),
     db: AsyncSession = Depends(get_async_session),
 ):
@@ -326,12 +342,12 @@ async def upload_file(
         data={'filename': result_filename, 'content_type': result_content_type},
     )
 
-    # Chat attachments are mirrored into every dataset attached to the
-    # configured RAGFlow assistant. The queue persists its state in file.data,
-    # so an interrupted native debug run resumes on the next backend start.
-    from open_webui.internal.heruvim_ragflow_ingestion import ingestion_queue
+    if _should_sync_upload_to_ragflow(metadata, ragflow_sync):
+        # The queue persists its state in file.data, so an interrupted native
+        # debug run resumes on the next backend start.
+        from open_webui.internal.heruvim_ragflow_ingestion import ingestion_queue
 
-    await ingestion_queue.enqueue(result_id, user.id)
+        await ingestion_queue.enqueue(result_id, user.id)
     return result
 
 

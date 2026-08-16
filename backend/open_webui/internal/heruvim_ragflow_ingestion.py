@@ -81,7 +81,14 @@ class RAGFlowIngestionQueue:
 
     @property
     def enabled(self) -> bool:
-        return bool(HERUVIM_RAGFLOW_ENABLED and HERUVIM_RAGFLOW_SYNC_ATTACHMENTS)
+        # Availability of the queue is separate from the automatic attachment
+        # policy. Explicit Knowledge Base uploads and manual retries must keep
+        # working when chat attachment synchronization is disabled.
+        return bool(HERUVIM_RAGFLOW_ENABLED)
+
+    @property
+    def sync_attachments(self) -> bool:
+        return bool(self.enabled and HERUVIM_RAGFLOW_SYNC_ATTACHMENTS)
 
     @property
     def size(self) -> int:

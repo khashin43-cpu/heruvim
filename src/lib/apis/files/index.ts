@@ -6,7 +6,8 @@ export const uploadFile = async (
 	file: File,
 	metadata?: object | null,
 	process?: boolean | null,
-	stream: boolean = true
+	stream: boolean = true,
+	ragflowSync?: boolean | null
 ) => {
 	const data = new FormData();
 	data.append('file', file);
@@ -17,6 +18,9 @@ export const uploadFile = async (
 	const searchParams = new URLSearchParams();
 	if (process !== undefined && process !== null) {
 		searchParams.append('process', String(process));
+	}
+	if (ragflowSync !== undefined && ragflowSync !== null) {
+		searchParams.append('ragflow_sync', String(ragflowSync));
 	}
 
 	let error = null;
