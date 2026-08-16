@@ -6,7 +6,7 @@ from open_webui.internal.heruvim_ragflow_ingestion import (
     canonical_document_id,
     public_ingestion_record,
 )
-from open_webui.routers import heruvim
+from open_webui.routers import files, heruvim
 
 
 def test_canonical_document_id_uses_content_hash():
@@ -73,3 +73,11 @@ def test_ragflow_delete_sends_json_body_with_generic_request(monkeypatch):
         '/api/v1/datasets/dataset-1/documents',
         {'json': {'ids': ['document-1'], 'delete_all': False}},
     )
+
+
+def test_internal_file_processing_flag_is_independent_from_ragflow(monkeypatch):
+    monkeypatch.setattr(files, 'HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING', False)
+    assert files._heruvim_ragflow_only_uploads()
+
+    monkeypatch.setattr(files, 'HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING', True)
+    assert not files._heruvim_ragflow_only_uploads()

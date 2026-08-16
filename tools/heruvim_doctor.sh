@@ -64,6 +64,19 @@ check_status_flag() {
 }
 
 printf 'HERUVIM document stack doctor\n\n'
+
+if [[ "${HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING:-false}" == "true" ]]; then
+    warn 'Open WebUI internal file processing is enabled; current chat attachments may enter the built-in RAG path instead of MCP-only processing'
+else
+    pass 'Open WebUI internal file processing is disabled'
+fi
+
+if [[ "${HERUVIM_OPENWEBUI_FILE_CONTEXT:-false}" == "true" ]]; then
+    warn 'Open WebUI file context is enabled; current chat attachments may trigger built-in retrieval before MCP document tools'
+else
+    pass 'Open WebUI file context is disabled'
+fi
+
 check_http 'Open WebUI backend' "$OPENWEBUI_URL/health"
 check_http 'Gateway OpenAPI' "$GATEWAY_URL/mcp/openapi.json"
 check_status_flag 'Gateway readers, RAGFlow key and OfficeCLI' "$GATEWAY_URL/tools/heruvim_tool_status" "d.get('ragflow_api_key_configured') and d.get('officecli_ready')"

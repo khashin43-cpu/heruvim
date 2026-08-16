@@ -2970,13 +2970,14 @@ async def process_chat_payload(request, form_data, user, metadata, model):
         # API callers don't expect hidden tools; they can explicitly request tools via tool_ids.
         if use_builtin_tools:
             heruvim_ragflow_files = _heruvim_uses_ragflow_file_context()
-            if not heruvim_ragflow_files:
+            if HERUVIM_OPENWEBUI_FILE_CONTEXT and not heruvim_ragflow_files:
                 # Add file context to user messages
                 chat_id = metadata.get('chat_id')
                 form_data['messages'] = await add_file_context(form_data.get('messages', []), chat_id, user)
 
             if (
-                not heruvim_ragflow_files
+                HERUVIM_OPENWEBUI_FILE_CONTEXT
+                and not heruvim_ragflow_files
                 and (model.get('info', {}).get('meta', {}).get('builtinTools') or {}).get('knowledge', True)
             ):
                 from html import escape
@@ -3055,7 +3056,7 @@ async def process_chat_payload(request, form_data, user, metadata, model):
 
     # Check if file context extraction is enabled for this model (default True)
     file_context_enabled = (model.get('info', {}).get('meta', {}).get('capabilities') or {}).get('file_context', True)
-    if _heruvim_uses_ragflow_file_context():
+    if not HERUVIM_OPENWEBUI_FILE_CONTEXT or _heruvim_uses_ragflow_file_context():
         file_context_enabled = False
 
     if file_context_enabled:

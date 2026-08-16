@@ -25,8 +25,6 @@ from fastapi.responses import FileResponse, StreamingResponse
 from open_webui.config import (
     BYPASS_ADMIN_ACCESS_CONTROL,
     HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING,
-    HERUVIM_RAGFLOW_ENABLED,
-    HERUVIM_RAGFLOW_SYNC_ATTACHMENTS,
     STORAGE_LOCAL_CACHE,
     STORAGE_PROVIDER,
     UPLOAD_DIR,
@@ -66,11 +64,10 @@ from open_webui.utils.access_control.files import has_access_to_file
 
 
 def _heruvim_ragflow_only_uploads() -> bool:
-    return bool(
-        HERUVIM_RAGFLOW_ENABLED
-        and HERUVIM_RAGFLOW_SYNC_ATTACHMENTS
-        and not HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING
-    )
+    # This switch owns Open WebUI's local loader/chunker/vector-store path.
+    # Keep it independent from optional RAGFlow synchronization so a chat
+    # attachment can remain a plain stored file for MCP document tools.
+    return not HERUVIM_OPENWEBUI_INTERNAL_FILE_PROCESSING
 
 
 _HERUVIM_TEXT_EXTENSIONS = {'txt', 'md', 'csv', 'json', 'jsonl', 'xml', 'yaml', 'yml', 'log', 'rtf'}

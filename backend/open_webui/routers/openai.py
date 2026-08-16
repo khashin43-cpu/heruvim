@@ -153,6 +153,16 @@ _HERUVIM_INDEXED_CORPUS_QUERY_RE = re.compile(
     r'(?i)\b(ragflow|баз[ае]\s+знаний|архив[еу]?|корпус[еу]?|по\s+документам|'
     r'во\s+всех\s+документах|среди\s+документов)\b'
 )
+_HERUVIM_CAPABILITY_QUERY_RE = re.compile(
+    r'(?i)\b('
+    r'как\s+работает\s+(?:херувим|heruvim)|'
+    r'что\s+(?:ты|херувим|heruvim)\s+уме(?:ешь|ет)|'
+    r'как(?:ие|ой)\s+(?:[mм][cс][pр]|инструмент\w*|тул\w*|функци\w*|возможност\w*)\s+(?:доступн\w*|есть|подключен\w*)|'
+    r'опис\w*\s+(?:[mм][cс][pр]|инструмент\w*|возможност\w*)|'
+    r'список\s+(?:[mм][cс][pр]|инструмент\w*|возможност\w*)|'
+    r'(?:[mм][cс][pр]|инструмент\w*|тул\w*|функци\w*|возможност\w*)\b.{0,80}\b(?:доступн\w*|подключен\w*|есть)'
+    r')\b'
+)
 _HERUVIM_DOCX_EDITOR_BASE_URL = os.getenv('HERUVIM_DOCX_EDITOR_BASE_URL', 'http://127.0.0.1:9393').rstrip('/')
 _HERUVIM_PDF_EDITOR_BASE_URL = os.getenv('HERUVIM_PDF_EDITOR_BASE_URL', 'http://127.0.0.1:9394').rstrip('/')
 _HERUVIM_LOCAL_OPENAPI_TOOLS = {
@@ -194,6 +204,14 @@ _HERUVIM_ARTIFACT_TOOLS = {
 }
 _HERUVIM_RAGFLOW_TOOL_SYSTEM_PROMPT = (
     'You are ХЕРУВИМ. Answer normally from your own knowledge when indexed documents are not needed. '
+    'Questions about your own capabilities, available MCP tools, tool names, architecture, configuration, or how ХЕРУВИМ works '
+    'are assistant-metadata questions: answer them from the supplied tool definitions and this system prompt. Never search RAGFlow '
+    'for those questions unless the user explicitly asks to find that information in an indexed knowledge base or archive. '
+    'Configured document capabilities are: RAGFlow search over indexed documents; reading current PDF, DOCX, and TXT attachments; '
+    'creating DOCX and replacing exact DOCX text; OfficeCLI operations; reading PDFs and OCR; extracting PDF text blocks and '
+    'coordinates; replacing, redacting, and adding PDF text; making scans searchable; replacing OCR-located text; extracting, '
+    'deleting, rotating, and merging PDF pages; and setting PDF metadata. Describe these capabilities when asked, while making clear '
+    'that an operation runs only when its corresponding MCP/editor service is connected. '
     'Current chat attachments and indexed RAGFlow corpora are different sources. '
     'When the user asks to inspect, read, summarize, quote, or edit a file attached to the current chat, use the '
     'provided local attachment path with the available MCP document tools; do not search RAGFlow for that current attachment. '
@@ -217,8 +235,9 @@ _HERUVIM_RAGFLOW_TOOL_SCHEMA = {
     'function': {
         'name': _HERUVIM_RAGFLOW_TOOL_NAME,
         'description': (
-            'Search indexed user documents in RAGFlow. Use this for questions about uploaded files, PDFs, DOCX, '
-            'scans, reports, contracts, document contents, or any answer that needs source-backed evidence.'
+            'Search the indexed RAGFlow knowledge base, corpus, or archive. Use only when the user asks to find, compare, '
+            'verify, or answer from documents already indexed there. Do not use for questions about ХЕРУВИМ capabilities, '
+            'available MCP tools, configuration, general knowledge, or a file attached to the current chat.'
         ),
         'parameters': {
             'type': 'object',
@@ -417,16 +436,26 @@ def _extract_latest_user_text(messages: list | None) -> str:
     return ''
 
 
-def _add_heruvim_ragflow_tool(payload: dict) -> None:
+def _add_heruvim_ragflow_tool(payload: dict, *, include_ragflow: bool = True) -> None:
     tools = payload.get('tools')
     if not isinstance(tools, list):
         tools = []
+    if not include_ragflow:
+        tools = [
+            tool
+            for tool in tools
+            if not (
+                isinstance(tool, dict)
+                and isinstance(tool.get('function'), dict)
+                and tool['function'].get('name') == _HERUVIM_RAGFLOW_TOOL_NAME
+            )
+        ]
     existing_names = {
         (tool.get('function') or {}).get('name')
         for tool in tools
         if isinstance(tool, dict) and isinstance(tool.get('function'), dict)
     }
-    if _HERUVIM_RAGFLOW_TOOL_NAME not in existing_names:
+    if include_ragflow and _HERUVIM_RAGFLOW_TOOL_NAME not in existing_names:
         tools.append(_HERUVIM_RAGFLOW_TOOL_SCHEMA)
     if _HERUVIM_READ_DOCUMENT_TOOL_NAME not in existing_names:
         tools.append(_HERUVIM_READ_DOCUMENT_TOOL_SCHEMA)
@@ -733,7 +762,11 @@ async def _apply_heruvim_ragflow_tool_loop(
 ) -> dict:
     public_base_url = await _heruvim_public_base_url(request)
     planning_payload = copy.deepcopy(payload)
-    _add_heruvim_ragflow_tool(planning_payload)
+    latest_user_query = _extract_latest_user_text(planning_payload.get('messages'))
+    _add_heruvim_ragflow_tool(
+        planning_payload,
+        include_ragflow=not _is_heruvim_capability_query(latest_user_query),
+    )
     _add_heruvim_ragflow_tool_prompt(planning_payload)
     messages = planning_payload.get('messages')
     if not isinstance(messages, list):
@@ -861,6 +894,12 @@ def _should_use_heruvim_ragflow(query: str) -> bool:
     if HERUVIM_RAGFLOW_AUTO_RETRIEVAL_MODE in {'always', 'all', 'force'}:
         return True
     return _is_heruvim_document_query(query)
+
+
+def _is_heruvim_capability_query(query: str) -> bool:
+    if not query or _HERUVIM_INDEXED_CORPUS_QUERY_RE.search(query):
+        return False
+    return bool(_HERUVIM_CAPABILITY_QUERY_RE.search(query))
 
 
 def _ragflow_chunk_value(chunk: dict, *keys: str) -> Any:
